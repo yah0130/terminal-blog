@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'utils/terminal_colors.dart';
@@ -38,21 +39,18 @@ class _TerminalWindowState extends State<TerminalWindow> {
   final TextEditingController _inputController = TextEditingController();
   final FocusNode _focusNode = FocusNode();
   final ScrollController _scrollController = ScrollController();
-  bool _cursorVisible = true;
+  bool _isUserScrolling = false;
 
   @override
   void initState() {
     super.initState();
-    _startCursorBlink();
+    _scrollController.addListener(_onScroll);
   }
 
-  void _startCursorBlink() {
-    Future.delayed(const Duration(milliseconds: 500), () {
-      if (mounted) {
-        setState(() => _cursorVisible = !_cursorVisible);
-        _startCursorBlink();
-      }
-    });
+  void _onScroll() {
+    if (_scrollController.position.isScrollingNotifier.value) {
+      _isUserScrolling = true;
+    }
   }
 
   @override
@@ -69,10 +67,25 @@ class _TerminalWindowState extends State<TerminalWindow> {
       context.read<TerminalState>().executeCommand(input);
       _inputController.clear();
     }
+    _isUserScrolling = false;
+    _focusNode.requestFocus();
     _scrollToBottom();
   }
 
+  void _navigateHistory(bool up) {
+    final state = context.read<TerminalState>();
+    state.navigateHistory(up);
+    final cmd = state.historyCommand;
+    if (cmd != null) {
+      _inputController.text = cmd;
+      _inputController.selection = TextSelection.fromPosition(
+        TextPosition(offset: cmd.length),
+      );
+    }
+  }
+
   void _scrollToBottom() {
+    if (_isUserScrolling) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scrollController.hasClients) {
         _scrollController.animateTo(
@@ -147,7 +160,8 @@ class _TerminalWindowState extends State<TerminalWindow> {
                 ),
                 child: Consumer<TerminalState>(
                   builder: (context, state, _) {
-                    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+                    WidgetsBinding.instance
+                        .addPostFrameCallback((_) => _scrollToBottom());
                     return Column(
                       children: [
                         // Output area
@@ -164,6 +178,7 @@ class _TerminalWindowState extends State<TerminalWindow> {
                                   fontSize: 14,
                                   height: 1.5,
                                   color: line.color ?? TermColors.command,
+                                  fontWeight: line.fontWeight,
                                 ),
                               );
                             },
@@ -174,43 +189,54 @@ class _TerminalWindowState extends State<TerminalWindow> {
                           padding: const EdgeInsets.all(16),
                           decoration: const BoxDecoration(
                             border: Border(
-                              top: BorderSide(color: TermColors.border, width: 1),
+                              top: BorderSide(
+                                  color: TermColors.border, width: 1),
                             ),
                           ),
-                          child: Row(
-                            children: [
-                              Text(
-                                'visitor@blog:~\$ ',
-                                style: GoogleFonts.jetBrainsMono(
-                                  fontSize: 14,
-                                  color: TermColors.prompt,
-                                ),
-                              ),
-                              Expanded(
-                                child: TextField(
-                                  controller: _inputController,
-                                  focusNode: _focusNode,
+                          child: Focus(
+                            onKeyEvent: (node, event) {
+                              if (event is KeyDownEvent) {
+                                if (event.logicalKey ==
+                                    LogicalKeyboardKey.arrowUp) {
+                                  _navigateHistory(true);
+                                  return KeyEventResult.handled;
+                                }
+                                if (event.logicalKey ==
+                                    LogicalKeyboardKey.arrowDown) {
+                                  _navigateHistory(false);
+                                  return KeyEventResult.handled;
+                                }
+                              }
+                              return KeyEventResult.ignored;
+                            },
+                            child: Row(
+                              children: [
+                                Text(
+                                  'visitor@blog:~\$ ',
                                   style: GoogleFonts.jetBrainsMono(
                                     fontSize: 14,
-                                    color: TermColors.command,
+                                    color: TermColors.prompt,
                                   ),
-                                  cursorColor: TermColors.prompt,
-                                  decoration: InputDecoration(
-                                    border: InputBorder.none,
-                                    hintText: '',
-                                    suffixIcon: _cursorVisible
-                                        ? Container(
-                                            width: 8,
-                                            height: 20,
-                                            color: TermColors.prompt,
-                                          )
-                                        : null,
-                                  ),
-                                  onSubmitted: (_) => _submitCommand(),
-                                  onChanged: (_) => setState(() {}),
                                 ),
-                              ),
-                            ],
+                                Expanded(
+                                  child: TextField(
+                                    controller: _inputController,
+                                    focusNode: _focusNode,
+                                    autofocus: true,
+                                    style: GoogleFonts.jetBrainsMono(
+                                      fontSize: 14,
+                                      color: TermColors.command,
+                                    ),
+                                    cursorColor: TermColors.prompt,
+                                    decoration: const InputDecoration(
+                                      border: InputBorder.none,
+                                      hintText: '',
+                                    ),
+                                    onSubmitted: (_) => _submitCommand(),
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
                       ],
