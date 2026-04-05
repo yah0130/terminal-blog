@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/article.dart';
 import '../services/api_service.dart';
 
@@ -20,15 +21,52 @@ class TerminalState extends ChangeNotifier {
   Article? _currentArticle;
   List<Article> _articles = [];
   final ApiService _apiService = ApiService();
+  String? _currentUserEmail;
+  String? _token;
 
   ViewState get currentView => _currentView;
   List<OutputLine> get outputHistory => _outputHistory;
   List<String> get commandHistory => _commandHistory;
   Article? get currentArticle => _currentArticle;
   List<Article> get articles => _articles;
+  String? get currentUserEmail => _currentUserEmail;
+  bool get isLoggedIn => _currentUserEmail != null;
+
+  String get promptPrefix => isLoggedIn ? _currentUserEmail! : 'visitor';
 
   TerminalState() {
+    _loadStoredAuth();
     _showWelcome();
+  }
+
+  Future<void> _loadStoredAuth() async {
+    final prefs = await SharedPreferences.getInstance();
+    _token = prefs.getString('auth_token');
+    _currentUserEmail = prefs.getString('user_email');
+    if (_token != null) {
+      _apiService.setToken(_token);
+    }
+    notifyListeners();
+  }
+
+  Future<void> _saveAuth(String token, String email) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('auth_token', token);
+    await prefs.setString('user_email', email);
+    _token = token;
+    _currentUserEmail = email;
+    _apiService.setToken(token);
+    notifyListeners();
+  }
+
+  Future<void> _clearAuth() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('auth_token');
+    await prefs.remove('user_email');
+    _token = null;
+    _currentUserEmail = null;
+    _apiService.setToken(null);
+    notifyListeners();
   }
 
   void _showWelcome() {
@@ -73,7 +111,7 @@ class TerminalState extends ChangeNotifier {
     final trimmed = input.trim();
     if (trimmed.isEmpty) return;
 
-    _addLine('visitor@blog:~\$ $trimmed', color: const Color(0xFF4EC9B0));
+    _addLine('$promptPrefix@blog:~\$ $trimmed', color: const Color(0xFF4EC9B0));
     _commandHistory.add(trimmed);
     _historyIndex = _commandHistory.length;
 
@@ -84,6 +122,15 @@ class TerminalState extends ChangeNotifier {
     switch (cmd) {
       case 'help':
         _showHelp();
+        break;
+      case 'reg':
+        _handleRegister(args);
+        break;
+      case 'login':
+        _handleLogin(args);
+        break;
+      case 'logout':
+        _handleLogout();
         break;
       case 'blog':
         _handleBlogCommand(args);
@@ -109,21 +156,92 @@ class TerminalState extends ChangeNotifier {
     _addLine('');
     _addLine('  help                 Show this help message',
         color: const Color(0xFF808080));
-    _addLine('  blog list            List all articles',
+    _addLine('  reg <email> <pwd>   Register a new account',
         color: const Color(0xFF808080));
-    _addLine('  blog read <id>       Read article by ID',
+    _addLine('  login <email> <pwd> Login to your account',
         color: const Color(0xFF808080));
-    _addLine('  blog search <word>  Search articles by keyword',
+    if (isLoggedIn) {
+      _addLine('  logout              Logout from your account',
+          color: const Color(0xFF808080));
+    }
+    _addLine('  blog list           List all articles',
         color: const Color(0xFF808080));
-    _addLine('  clear                Clear terminal screen',
+    _addLine('  blog read <id>      Read article by ID',
         color: const Color(0xFF808080));
-    _addLine('  exit                 Return to previous view',
+    _addLine('  blog search <word> Search articles by keyword',
+        color: const Color(0xFF808080));
+    _addLine('  clear               Clear terminal screen',
+        color: const Color(0xFF808080));
+    _addLine('  exit                Return to previous view',
         color: const Color(0xFF808080));
     _addLine('');
     _addLine('Examples:', color: const Color(0xFFDCDCAA));
+    _addLine('  \$ reg user@example.com password123',
+        color: const Color(0xFF4EC9B0));
+    _addLine('  \$ login user@example.com password123',
+        color: const Color(0xFF4EC9B0));
     _addLine('  \$ blog list', color: const Color(0xFF4EC9B0));
     _addLine('  \$ blog read 1', color: const Color(0xFF4EC9B0));
     _addLine('  \$ blog search flutter', color: const Color(0xFF4EC9B0));
+  }
+
+  Future<void> _handleRegister(List<String> args) async {
+    if (args.length < 2) {
+      _addLine('Usage: reg <email> <password>', color: const Color(0xFFF44747));
+      return;
+    }
+
+    final email = args[0];
+    final password = args.sublist(1).join(' ');
+
+    _addLine('Registering...', color: const Color(0xFF808080));
+
+    try {
+      final result = await _apiService.register(email, password);
+      await _saveAuth(result.token, result.user.email);
+      _addLine('Registration successful! You are now logged in as $email.',
+          color: const Color(0xFF57A64A));
+    } catch (e) {
+      _addLine(
+          'Registration failed: ${e.toString().replaceFirst("Exception: ", "")}',
+          color: const Color(0xFFF44747));
+    }
+    notifyListeners();
+  }
+
+  Future<void> _handleLogin(List<String> args) async {
+    if (args.length < 2) {
+      _addLine('Usage: login <email> <password>',
+          color: const Color(0xFFF44747));
+      return;
+    }
+
+    final email = args[0];
+    final password = args.sublist(1).join(' ');
+
+    _addLine('Logging in...', color: const Color(0xFF808080));
+
+    try {
+      final result = await _apiService.login(email, password);
+      await _saveAuth(result.token, result.user.email);
+      _addLine('Login successful! Welcome back, $email.',
+          color: const Color(0xFF57A64A));
+    } catch (e) {
+      _addLine('Login failed: ${e.toString().replaceFirst("Exception: ", "")}',
+          color: const Color(0xFFF44747));
+    }
+    notifyListeners();
+  }
+
+  Future<void> _handleLogout() async {
+    if (!isLoggedIn) {
+      _addLine('You are not logged in.', color: const Color(0xFFF44747));
+      return;
+    }
+
+    await _clearAuth();
+    _addLine('Logged out successfully.', color: const Color(0xFF57A64A));
+    notifyListeners();
   }
 
   void _handleBlogCommand(List<String> args) {

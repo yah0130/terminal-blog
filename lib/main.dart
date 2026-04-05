@@ -212,7 +212,7 @@ class _TerminalWindowState extends State<TerminalWindow> {
                             child: Row(
                               children: [
                                 Text(
-                                  'visitor@blog:~\$ ',
+                                  '${state.promptPrefix}@blog:~\$ ',
                                   style: GoogleFonts.jetBrainsMono(
                                     fontSize: 14,
                                     color: TermColors.prompt,
