@@ -21,6 +21,11 @@ WEB_DIR="/var/www/terminal_blog"
 FLUTTER_REPO="https://github.com/yah0130/terminal-blog.git"
 API_REPO="https://github.com/yah0130/terminal-blog-api.git"
 
+# Disable git interactive prompts and credential helpers
+export GIT_TERMINAL_PROMPT=0
+git config --global credential.helper ""
+git config --global init.defaultBranch main
+
 # Check if running as root
 if [ "$EUID" -ne 0 ]; then
     echo -e "${RED}Please run as root (use sudo)${NC}"
@@ -58,6 +63,26 @@ install_dependencies() {
         rm /tmp/go.tar.gz
     fi
     export PATH=$PATH:/usr/local/go/bin
+    
+    # Setup SSH for GitHub
+    if [ ! -f ~/.ssh/id_rsa ]; then
+        echo "Generating SSH key for GitHub..."
+        ssh-keygen -t rsa -b 4096 -N "" -f ~/.ssh/id_rsa
+    fi
+    if [ ! -f ~/.ssh/config ]; then
+        cat > ~/.ssh/config << 'EOF'
+Host github.com
+    StrictHostKeyChecking no
+    UserKnownHostsFile /dev/null
+EOF
+    fi
+    chmod 600 ~/.ssh/config
+    
+    echo -e "${YELLOW}Please add this SSH key to your GitHub account:${NC}"
+    echo -e "${YELLOW}https://github.com/settings/keys${NC}"
+    cat ~/.ssh/id_rsa.pub
+    echo -e "${YELLOW}Press Enter to continue after adding the key...${NC}"
+    read
     
     systemctl enable nginx postgresql
     systemctl start nginx postgresql
@@ -293,7 +318,7 @@ EOF
     rm -f /etc/nginx/sites-enabled/default
     
     systemctl restart nginx
-    
+
     echo -e "${GREEN}Nginx configured${NC}\n"
 }
 
