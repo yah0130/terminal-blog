@@ -39,12 +39,28 @@ install_dependencies() {
     
     if [ "$OS" == "debian" ]; then
         apt update
-        apt install -y nginx postgresql postgresql-contrib curl
+        apt install -y nginx postgresql postgresql-contrib curl wget
+        # Install Go
+        if ! command -v go &> /dev/null; then
+            wget -q https://go.dev/dl/go1.22.0.linux-amd64.tar.gz -O /tmp/go.tar.gz
+            rm -rf /usr/local/go
+            tar -C /usr/local -xzf /tmp/go.tar.gz
+            export PATH=$PATH:/usr/local/go/bin
+            echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.bashrc
+        fi
     else
-        yum install -y nginx postgresql-server postgresql-contrib curl
-        postgresql-setup initdb
-        systemctl start postgresql
+        yum install -y nginx postgresql postgresql-contrib curl wget
+        # Install Go
+        if ! command -v go &> /dev/null; then
+            wget -q https://go.dev/dl/go1.22.0.linux-amd64.tar.gz -O /tmp/go.tar.gz
+            rm -rf /usr/local/go
+            tar -C /usr/local -xzf /tmp/go.tar.gz
+            export PATH=$PATH:/usr/local/go/bin
+            echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.bashrc
+        fi
     fi
+    
+    export PATH=$PATH:/usr/local/go/bin
     
     systemctl enable nginx postgresql
     systemctl start nginx postgresql
@@ -126,21 +142,28 @@ create_admin_user() {
 deploy_api() {
     echo -e "${GREEN}[4/6] Deploying API...${NC}"
     
-    # Check if binary was uploaded
-    if [ ! -f "/tmp/$API_BINARY" ]; then
-        echo -e "${RED}API binary not found in /tmp/. Please upload it first.${NC}"
+    export PATH=$PATH:/usr/local/go/bin
+    
+    # Check if source code was uploaded
+    if [ ! -d "/tmp/terminal_blog_api" ]; then
+        echo -e "${RED}API source not found in /tmp/terminal_blog_api. Please upload the source folder first.${NC}"
         exit 1
     fi
     
     # Stop existing service
     systemctl stop "$API_SERVICE_NAME" 2>/dev/null || true
     
+    # Compile on server
+    echo -e "${YELLOW}Compiling API on server...${NC}"
+    cd /tmp/terminal_blog_api
+    GOOS=linux GOARCH=amd64 go build -o "$API_BINARY" .
+    
     # Copy binary
     mkdir -p "$API_DIR"
-    cp "/tmp/$API_BINARY" "$API_DIR/"
+    cp "/tmp/terminal_blog_api/$API_BINARY" "$API_DIR/"
     
     # Create systemd service
-    cat > /etc/systemd/system/$API_SERVICE_NAME.service << EOF
+    cat > /etc/systemd/system/$API_SERVICE_NAME.service << 'EOF'
 [Unit]
 Description=Terminal Blog API
 After=network.target postgresql.service
