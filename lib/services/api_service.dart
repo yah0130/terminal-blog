@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../models/article.dart';
 
@@ -23,11 +24,12 @@ class AdminUser {
   final bool isAdmin;
   final DateTime createdAt;
 
-  AdminUser(
-      {required this.id,
-      required this.email,
-      required this.isAdmin,
-      required this.createdAt});
+  AdminUser({
+    required this.id,
+    required this.email,
+    required this.isAdmin,
+    required this.createdAt,
+  });
 }
 
 class AdminTag {
@@ -38,7 +40,13 @@ class AdminTag {
 }
 
 class ApiService {
-  static const String baseUrl = 'http://localhost:8080';
+  static String get baseUrl {
+    if (kIsWeb) {
+      return ''; // Use relative URL when running in browser
+    }
+    return 'http://localhost:8080';
+  }
+
   String? _token;
 
   void setToken(String? token) {
