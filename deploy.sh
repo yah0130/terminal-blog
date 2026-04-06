@@ -170,10 +170,10 @@ deploy_api() {
     if [ -d "/tmp/terminal-blog-api" ]; then
         echo "Updating API repo..."
         cd /tmp/terminal-blog-api
-        git pull
+        GIT_TERMINAL_PROMPT=0 git pull
     else
         echo "Cloning API repo..."
-        git clone "$API_REPO" /tmp/terminal-blog-api
+        GIT_TERMINAL_PROMPT=0 git clone --depth 1 "$API_REPO" /tmp/terminal-blog-api
     fi
     
     # Stop existing service
@@ -248,10 +248,10 @@ deploy_web() {
     if [ -d "/tmp/terminal-blog" ]; then
         echo "Updating Flutter repo..."
         cd /tmp/terminal-blog
-        git pull
+        GIT_TERMINAL_PROMPT=0 git pull
     else
         echo "Cloning Flutter repo..."
-        git clone "$FLUTTER_REPO" /tmp/terminal-blog
+        GIT_TERMINAL_PROMPT=0 git clone --depth 1 "$FLUTTER_REPO" /tmp/terminal-blog
     fi
     
     # Build Flutter Web
