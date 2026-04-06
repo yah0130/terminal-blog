@@ -162,8 +162,15 @@ EOF
     systemctl start "$API_SERVICE_NAME"
     systemctl enable "$API_SERVICE_NAME"
     
-    # Wait for API to start
-    sleep 2
+    # Wait for API to be ready
+    echo -e "${YELLOW}Waiting for API to start...${NC}"
+    for i in {1..10}; do
+        if curl -s "http://localhost:$API_PORT/api/articles" > /dev/null 2>&1; then
+            echo -e "${GREEN}API is ready${NC}"
+            break
+        fi
+        sleep 1
+    done
     
     # Create admin user via API (only if not exists)
     if [ "$ADMIN_EMAIL" != "skip" ]; then
@@ -171,6 +178,8 @@ EOF
         ADMIN_RESPONSE=$(curl -s -X POST "http://localhost:$API_PORT/api/register" \
             -H "Content-Type: application/json" \
             -d "{\"email\":\"$ADMIN_EMAIL\",\"password\":\"$ADMIN_PASSWORD\"}")
+        
+        echo "Response: $ADMIN_RESPONSE"
         
         if echo "$ADMIN_RESPONSE" | grep -q "token"; then
             echo -e "${GREEN}Admin user created: $ADMIN_EMAIL${NC}"
