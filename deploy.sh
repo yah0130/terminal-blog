@@ -17,15 +17,6 @@ API_DIR="/opt/terminal_blog_api"
 API_SERVICE_NAME="terminal-blog-api"
 WEB_DIR="/var/www/terminal_blog"
 
-# Git repos
-FLUTTER_REPO="https://github.com/yah0130/terminal-blog.git"
-API_REPO="https://github.com/yah0130/terminal-blog-api.git"
-
-# Disable git interactive prompts and credential helpers
-export GIT_TERMINAL_PROMPT=0
-git config --global credential.helper ""
-git config --global init.defaultBranch main
-
 # Check if running as root
 if [ "$EUID" -ne 0 ]; then
     echo -e "${RED}Please run as root (use sudo)${NC}"
@@ -43,13 +34,13 @@ else
 fi
 
 install_dependencies() {
-    echo -e "${GREEN}[1/7] Installing dependencies...${NC}"
+    echo -e "${GREEN}[1/6] Installing dependencies...${NC}"
     
     if [ "$OS" == "debian" ]; then
         apt update
-        apt install -y nginx postgresql postgresql-contrib curl wget git
+        apt install -y nginx postgresql postgresql-contrib curl wget
     else
-        yum install -y nginx postgresql postgresql-server postgresql-contrib curl wget git
+        yum install -y nginx postgresql postgresql-server postgresql-contrib curl wget
         postgresql-setup initdb
         systemctl start postgresql
     fi
@@ -64,26 +55,6 @@ install_dependencies() {
     fi
     export PATH=$PATH:/usr/local/go/bin
     
-    # Setup SSH for GitHub
-    if [ ! -f ~/.ssh/id_rsa ]; then
-        echo "Generating SSH key for GitHub..."
-        ssh-keygen -t rsa -b 4096 -N "" -f ~/.ssh/id_rsa
-    fi
-    if [ ! -f ~/.ssh/config ]; then
-        cat > ~/.ssh/config << 'EOF'
-Host github.com
-    StrictHostKeyChecking no
-    UserKnownHostsFile /dev/null
-EOF
-    fi
-    chmod 600 ~/.ssh/config
-    
-    echo -e "${YELLOW}Please add this SSH key to your GitHub account:${NC}"
-    echo -e "${YELLOW}https://github.com/settings/keys${NC}"
-    cat ~/.ssh/id_rsa.pub
-    echo -e "${YELLOW}Press Enter to continue after adding the key...${NC}"
-    read
-    
     systemctl enable nginx postgresql
     systemctl start nginx postgresql
     
@@ -91,7 +62,7 @@ EOF
 }
 
 setup_database() {
-    echo -e "${GREEN}[2/7] Setting up database...${NC}"
+    echo -e "${GREEN}[2/6] Setting up database...${NC}"
     
     # Create database and user
     sudo -u postgres psql << 'EOF'
@@ -140,7 +111,7 @@ EOF
 }
 
 setup_admin() {
-    echo -e "${GREEN}[3/7] Setting up admin user...${NC}"
+    echo -e "${GREEN}[3/6] Setting up admin user...${NC}"
     
     # Check if admin already exists
     ADMIN_EXISTS=$(sudo -u postgres psql -d terminal_blog -t -c "SELECT COUNT(*) FROM users WHERE is_admin = true;")
@@ -162,33 +133,22 @@ setup_admin() {
 }
 
 deploy_api() {
-    echo -e "${GREEN}[4/7] Deploying API...${NC}"
+    echo -e "${GREEN}[4/6] Deploying API...${NC}"
     
     export PATH=$PATH:/usr/local/go/bin
     
-    # Download or update API repo as tarball
-    if [ -d "/tmp/terminal-blog-api" ]; then
-        echo "Updating API repo..."
-        rm -rf /tmp/terminal-blog-api
+    # Check if API binary exists
+    if [ ! -f "/tmp/terminal_blog_api" ]; then
+        echo -e "${RED}API binary not found in /tmp/terminal_blog_api${NC}"
+        exit 1
     fi
-    echo "Downloading API repo..."
-    wget -q https://github.com/yah0130/terminal-blog-api/archive/refs/heads/main.tar.gz -O /tmp/api.tar.gz
-    mkdir -p /tmp/terminal-blog-api
-    tar -xzf /tmp/api.tar.gz -C /tmp/terminal-blog-api --strip-components=1
-    rm /tmp/api.tar.gz
     
     # Stop existing service
     systemctl stop "$API_SERVICE_NAME" 2>/dev/null || true
     
-    # Build API
-    echo -e "${YELLOW}Building API...${NC}"
-    cd /tmp/terminal-blog-api
-    go mod download
-    GOOS=linux GOARCH=amd64 go build -o "$API_BINARY" .
-    
     # Deploy binary
     mkdir -p "$API_DIR"
-    cp "/tmp/terminal-blog-api/$API_BINARY" "$API_DIR/"
+    cp "/tmp/terminal_blog_api" "$API_DIR/$API_BINARY"
     
     # Create systemd service
     cat > /etc/systemd/system/$API_SERVICE_NAME.service << EOF
@@ -243,42 +203,23 @@ EOF
 }
 
 deploy_web() {
-    echo -e "${GREEN}[5/7] Deploying Flutter Web...${NC}"
+    echo -e "${GREEN}[5/6] Deploying Flutter Web...${NC}"
     
-    # Download or update Flutter repo as tarball
-    if [ -d "/tmp/terminal-blog" ]; then
-        echo "Updating Flutter repo..."
-        rm -rf /tmp/terminal-blog
-    fi
-    echo "Downloading Flutter repo..."
-    wget -q https://github.com/yah0130/terminal-blog/archive/refs/heads/main.tar.gz -O /tmp/web.tar.gz
-    mkdir -p /tmp/terminal-blog
-    tar -xzf /tmp/web.tar.gz -C /tmp/terminal-blog --strip-components=1
-    rm /tmp/web.tar.gz
-    
-    # Build Flutter Web
-    echo -e "${YELLOW}Note: Flutter Web build requires Flutter SDK on server${NC}"
-    echo -e "${YELLOW}If Flutter is not installed, please build locally and upload web files${NC}"
-    
-    if command -v flutter &> /dev/null; then
-        echo -e "${YELLOW}Building Flutter Web...${NC}"
-        cd /tmp/terminal-blog
-        flutter pub get
-        flutter build web --release
-        rm -rf "$WEB_DIR"
-        mkdir -p "$WEB_DIR"
-        cp -r /tmp/terminal-blog/build/web/. "$WEB_DIR/"
-        echo -e "${GREEN}Flutter Web built and deployed${NC}"
-    else
-        echo -e "${YELLOW}Flutter not found. Please upload web files to $WEB_DIR manually${NC}"
-        mkdir -p "$WEB_DIR"
+    # Check if web files exist
+    if [ ! -d "/tmp/web" ]; then
+        echo -e "${RED}Flutter Web files not found in /tmp/web${NC}"
+        exit 1
     fi
     
-    echo -e "${GREEN}Web deployed${NC}\n"
+    rm -rf "$WEB_DIR"
+    mkdir -p "$WEB_DIR"
+    cp -r /tmp/web/. "$WEB_DIR/"
+    
+    echo -e "${GREEN}Flutter Web deployed${NC}\n"
 }
 
 configure_nginx() {
-    echo -e "${GREEN}[6/7] Configuring Nginx...${NC}"
+    echo -e "${GREEN}[6/6] Configuring Nginx...${NC}"
     
     echo "Enter your domain (e.g., blog.example.com) or press Enter for IP:"
     read DOMAIN
@@ -320,13 +261,9 @@ EOF
     rm -f /etc/nginx/sites-enabled/default
     
     systemctl restart nginx
-
+    
     echo -e "${GREEN}Nginx configured${NC}\n"
-}
-
-enable_ssl() {
-    echo -e "${GREEN}[7/7] Setup complete!${NC}"
-    echo ""
+    
     echo -e "${GREEN}========================================${NC}"
     echo -e "${GREEN}Deployment complete!${NC}"
     echo -e "${GREEN}========================================${NC}"
@@ -346,4 +283,3 @@ setup_admin
 deploy_api
 deploy_web
 configure_nginx
-enable_ssl
