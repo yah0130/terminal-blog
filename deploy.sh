@@ -166,15 +166,16 @@ deploy_api() {
     
     export PATH=$PATH:/usr/local/go/bin
     
-    # Clone or update API repo
+    # Download or update API repo as tarball
     if [ -d "/tmp/terminal-blog-api" ]; then
         echo "Updating API repo..."
-        cd /tmp/terminal-blog-api
-        GIT_TERMINAL_PROMPT=0 git pull
-    else
-        echo "Cloning API repo..."
-        GIT_TERMINAL_PROMPT=0 git clone --depth 1 "$API_REPO" /tmp/terminal-blog-api
+        rm -rf /tmp/terminal-blog-api
     fi
+    echo "Downloading API repo..."
+    wget -q https://github.com/yah0130/terminal-blog-api/archive/refs/heads/main.tar.gz -O /tmp/api.tar.gz
+    mkdir -p /tmp/terminal-blog-api
+    tar -xzf /tmp/api.tar.gz -C /tmp/terminal-blog-api --strip-components=1
+    rm /tmp/api.tar.gz
     
     # Stop existing service
     systemctl stop "$API_SERVICE_NAME" 2>/dev/null || true
@@ -244,15 +245,16 @@ EOF
 deploy_web() {
     echo -e "${GREEN}[5/7] Deploying Flutter Web...${NC}"
     
-    # Clone or update Flutter repo
+    # Download or update Flutter repo as tarball
     if [ -d "/tmp/terminal-blog" ]; then
         echo "Updating Flutter repo..."
-        cd /tmp/terminal-blog
-        GIT_TERMINAL_PROMPT=0 git pull
-    else
-        echo "Cloning Flutter repo..."
-        GIT_TERMINAL_PROMPT=0 git clone --depth 1 "$FLUTTER_REPO" /tmp/terminal-blog
+        rm -rf /tmp/terminal-blog
     fi
+    echo "Downloading Flutter repo..."
+    wget -q https://github.com/yah0130/terminal-blog/archive/refs/heads/main.tar.gz -O /tmp/web.tar.gz
+    mkdir -p /tmp/terminal-blog
+    tar -xzf /tmp/web.tar.gz -C /tmp/terminal-blog --strip-components=1
+    rm /tmp/web.tar.gz
     
     # Build Flutter Web
     echo -e "${YELLOW}Note: Flutter Web build requires Flutter SDK on server${NC}"
