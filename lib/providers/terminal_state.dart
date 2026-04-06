@@ -23,6 +23,7 @@ class TerminalState extends ChangeNotifier {
   final ApiService _apiService = ApiService();
   String? _currentUserEmail;
   String? _token;
+  bool _isAdmin = false;
 
   ViewState get currentView => _currentView;
   List<OutputLine> get outputHistory => _outputHistory;
@@ -31,6 +32,8 @@ class TerminalState extends ChangeNotifier {
   List<Article> get articles => _articles;
   String? get currentUserEmail => _currentUserEmail;
   bool get isLoggedIn => _currentUserEmail != null;
+  bool get isAdmin => _isAdmin;
+  ApiService get apiService => _apiService;
 
   String get promptPrefix => isLoggedIn ? _currentUserEmail! : 'visitor';
 
@@ -43,18 +46,21 @@ class TerminalState extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     _token = prefs.getString('auth_token');
     _currentUserEmail = prefs.getString('user_email');
+    _isAdmin = prefs.getBool('is_admin') ?? false;
     if (_token != null) {
       _apiService.setToken(_token);
     }
     notifyListeners();
   }
 
-  Future<void> _saveAuth(String token, String email) async {
+  Future<void> _saveAuth(String token, String email, bool isAdmin) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('auth_token', token);
     await prefs.setString('user_email', email);
+    await prefs.setBool('is_admin', isAdmin);
     _token = token;
     _currentUserEmail = email;
+    _isAdmin = isAdmin;
     _apiService.setToken(token);
     notifyListeners();
   }
@@ -63,8 +69,10 @@ class TerminalState extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('auth_token');
     await prefs.remove('user_email');
+    await prefs.remove('is_admin');
     _token = null;
     _currentUserEmail = null;
+    _isAdmin = false;
     _apiService.setToken(null);
     notifyListeners();
   }
@@ -198,7 +206,7 @@ class TerminalState extends ChangeNotifier {
 
     try {
       final result = await _apiService.register(email, password);
-      await _saveAuth(result.token, result.user.email);
+      await _saveAuth(result.token, result.user.email, result.user.isAdmin);
       _addLine('Registration successful! You are now logged in as $email.',
           color: const Color(0xFF57A64A));
     } catch (e) {
@@ -223,7 +231,7 @@ class TerminalState extends ChangeNotifier {
 
     try {
       final result = await _apiService.login(email, password);
-      await _saveAuth(result.token, result.user.email);
+      await _saveAuth(result.token, result.user.email, result.user.isAdmin);
       _addLine('Login successful! Welcome back, $email.',
           color: const Color(0xFF57A64A));
     } catch (e) {

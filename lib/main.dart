@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'utils/terminal_colors.dart';
 import 'providers/terminal_state.dart';
+import 'pages/admin_dashboard.dart';
 
 void main() {
   runApp(const TerminalBlogApp());
@@ -142,6 +143,30 @@ class _TerminalWindowState extends State<TerminalWindow> {
                         ),
                       ),
                     ),
+                  ),
+                  Consumer<TerminalState>(
+                    builder: (context, state, _) {
+                      if (state.isAdmin) {
+                        return TextButton(
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                  builder: (_) => AdminDashboard(
+                                      apiService: state.apiService)),
+                            );
+                          },
+                          child: Text(
+                            'Admin',
+                            style: GoogleFonts.jetBrainsMono(
+                              fontSize: 12,
+                              color: const Color(0xFF4EC9B0),
+                            ),
+                          ),
+                        );
+                      }
+                      return const SizedBox();
+                    },
                   ),
                   const SizedBox(width: 60),
                 ],
