@@ -102,7 +102,17 @@ EOF
 }
 
 create_admin_user() {
-    echo -e "${GREEN}[3/6] Creating admin user...${NC}"
+    echo -e "${GREEN}[3/6] Setting up admin user...${NC}"
+    
+    # Check if admin already exists
+    ADMIN_EXISTS=$(sudo -u postgres psql -d terminal_blog -t -c "SELECT COUNT(*) FROM users WHERE is_admin = true;")
+    ADMIN_EXISTS=$(echo $ADMIN_EXISTS | tr -d ' ')
+    
+    if [ "$ADMIN_EXISTS" -gt 0 ]; then
+        echo -e "${YELLOW}Admin user already exists, skipping creation${NC}"
+        ADMIN_EMAIL="skip"
+        return 0
+    fi
     
     echo "Enter admin email:"
     read ADMIN_EMAIL
@@ -110,26 +120,24 @@ create_admin_user() {
     echo "Enter admin password:"
     read -s ADMIN_PASSWORD
     
-    # Register via API (need to start API first)
     echo -e "${YELLOW}Admin user will be created when API starts${NC}\n"
 }
 
 deploy_api() {
     echo -e "${GREEN}[4/6] Deploying API...${NC}"
     
-    # Build API if not already built
-    if [ ! -f "$REPO_DIR/terminal_blog_api/$API_BINARY" ]; then
-        echo "Building API..."
-        cd "$REPO_DIR/terminal_blog_api"
-        go build -o "$API_BINARY" .
+    # Check if binary was uploaded
+    if [ ! -f "/tmp/$API_BINARY" ]; then
+        echo -e "${RED}API binary not found in /tmp/. Please upload it first.${NC}"
+        exit 1
     fi
     
     # Stop existing service
     systemctl stop "$API_SERVICE_NAME" 2>/dev/null || true
     
     # Copy binary
-    cp "$REPO_DIR/terminal_blog_api/$API_BINARY" "$API_DIR/"
     mkdir -p "$API_DIR"
+    cp "/tmp/$API_BINARY" "$API_DIR/"
     
     # Create systemd service
     cat > /etc/systemd/system/$API_SERVICE_NAME.service << EOF
@@ -157,39 +165,18 @@ EOF
     # Wait for API to start
     sleep 2
     
-    # Create admin user via API
-    echo -e "${GREEN}Creating admin user via API...${NC}"
-    ADMIN_RESPONSE=$(curl -s -X POST "http://localhost:$API_PORT/api/register" \
-        -H "Content-Type: application/json" \
-        -d "{\"email\":\"$ADMIN_EMAIL\",\"password\":\"$ADMIN_PASSWORD\"}")
-    
-    if echo "$ADMIN_RESPONSE" | grep -q "token"; then
-        # Make admin
-        TOKEN=$(echo "$ADMIN_RESPONSE" | grep -o '"token":"[^"]*"' | cut -d'"' -f4)
-        USER_ID=$(echo "$ADMIN_RESPONSE" | grep -o '"id":[0-9]*' | cut -d':' -f2)
+    # Create admin user via API (only if not exists)
+    if [ "$ADMIN_EMAIL" != "skip" ]; then
+        echo -e "${GREEN}Creating admin user via API...${NC}"
+        ADMIN_RESPONSE=$(curl -s -X POST "http://localhost:$API_PORT/api/register" \
+            -H "Content-Type: application/json" \
+            -d "{\"email\":\"$ADMIN_EMAIL\",\"password\":\"$ADMIN_PASSWORD\"}")
         
-        # Update to admin (direct DB update since we need bcrypt)
-        ADMIN_HASH=$(cd "$REPO_DIR/terminal_blog_api" && go run -exec 'sh -c' << 'GOCMD' 2>/dev/null
-package main
-import (
-    "fmt"
-    "github.com/jackc/pgx/v5/pgxpool"
-    "golang.org/x/crypto/bcrypt"
-    "context"
-)
-func main() {
-    ctx := context.Background()
-    db, _ := pgxpool.New(ctx, "postgres://blog_user:blog_password@localhost:5432/terminal_blog")
-    defer db.Close()
-    hash, _ := bcrypt.GenerateFromPassword([]byte("$ADMIN_PASSWORD"), bcrypt.DefaultCost)
-    db.Exec(ctx, "UPDATE users SET is_admin = true WHERE email = $1", "$ADMIN_EMAIL")
-    fmt.Println("Admin updated")
-}
-GOCMD
-)
-        echo -e "${GREEN}Admin user created: $ADMIN_EMAIL${NC}"
-    else
-        echo -e "${YELLOW}Admin creation failed or user exists. You may need to manually set admin status.${NC}"
+        if echo "$ADMIN_RESPONSE" | grep -q "token"; then
+            echo -e "${GREEN}Admin user created: $ADMIN_EMAIL${NC}"
+        else
+            echo -e "${YELLOW}Admin creation failed. You may need to create it manually.${NC}"
+        fi
     fi
     
     echo -e "${GREEN}API deployed${NC}\n"
@@ -198,17 +185,16 @@ GOCMD
 deploy_web() {
     echo -e "${GREEN}[5/6] Deploying Flutter Web...${NC}"
     
-    # Build if not built
-    if [ ! -d "$REPO_DIR/terminal_blog/build/web" ]; then
-        echo "Building Flutter Web..."
-        cd "$REPO_DIR/terminal_blog"
-        flutter build web --release
+    # Check if web files were uploaded
+    if [ ! -d "/tmp/web" ]; then
+        echo -e "${RED}Flutter Web not found in /tmp/web. Please upload build/web/* first.${NC}"
+        exit 1
     fi
     
     # Copy files
     rm -rf "$WEB_DIR"
     mkdir -p "$WEB_DIR"
-    cp -r "$REPO_DIR/terminal_blog/build/web/." "$WEB_DIR/"
+    cp -r /tmp/web/. "$WEB_DIR/"
     
     echo -e "${GREEN}Flutter Web deployed${NC}\n"
 }
