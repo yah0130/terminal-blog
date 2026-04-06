@@ -34,7 +34,7 @@ else
 fi
 
 install_dependencies() {
-    echo -e "${GREEN}[1/6] Installing dependencies...${NC}"
+    echo -e "${GREEN}[1/7] Installing dependencies...${NC}"
     
     if [ "$OS" == "debian" ]; then
         apt update
@@ -45,16 +45,6 @@ install_dependencies() {
         systemctl start postgresql
     fi
     
-    # Install Go
-    if ! command -v go &> /dev/null; then
-        echo "Installing Go..."
-        wget -q https://go.dev/dl/go1.22.0.linux-amd64.tar.gz -O /tmp/go.tar.gz
-        rm -rf /usr/local/go
-        tar -C /usr/local -xzf /tmp/go.tar.gz
-        rm /tmp/go.tar.gz
-    fi
-    export PATH=$PATH:/usr/local/go/bin
-    
     systemctl enable nginx postgresql
     systemctl start nginx postgresql
     
@@ -62,7 +52,7 @@ install_dependencies() {
 }
 
 setup_database() {
-    echo -e "${GREEN}[2/6] Setting up database...${NC}"
+    echo -e "${GREEN}[2/7] Setting up database...${NC}"
     
     # Create database and user
     sudo -u postgres psql << 'EOF'
@@ -111,7 +101,7 @@ EOF
 }
 
 setup_admin() {
-    echo -e "${GREEN}[3/6] Setting up admin user...${NC}"
+    echo -e "${GREEN}[3/7] Setting up admin user...${NC}"
     
     # Check if admin already exists
     ADMIN_EXISTS=$(sudo -u postgres psql -d terminal_blog -t -c "SELECT COUNT(*) FROM users WHERE is_admin = true;")
@@ -132,23 +122,40 @@ setup_admin() {
     echo -e "${YELLOW}Admin user will be created when API starts${NC}\n"
 }
 
-deploy_api() {
-    echo -e "${GREEN}[4/6] Deploying API...${NC}"
+build_and_deploy_api() {
+    echo -e "${GREEN}[4/7] Building and deploying API...${NC}"
     
     export PATH=$PATH:/usr/local/go/bin
     
-    # Check if API binary exists
-    if [ ! -f "/tmp/terminal_blog_api" ]; then
-        echo -e "${RED}API binary not found in /tmp/terminal_blog_api${NC}"
+    # Check if Go is installed
+    if ! command -v go &> /dev/null; then
+        echo "Installing Go..."
+        wget -q https://go.dev/dl/go1.22.0.linux-amd64.tar.gz -O /tmp/go.tar.gz
+        rm -rf /usr/local/go
+        tar -C /usr/local -xzf /tmp/go.tar.gz
+        rm /tmp/go.tar.gz
+    fi
+    export PATH=$PATH:/usr/local/go/bin
+    
+    # Check if API source exists
+    if [ ! -d "/tmp/terminal-blog-api" ]; then
+        echo -e "${RED}API source not found in /tmp/terminal-blog-api${NC}"
+        echo "Please upload the API source folder first"
         exit 1
     fi
     
     # Stop existing service
     systemctl stop "$API_SERVICE_NAME" 2>/dev/null || true
     
+    # Build API
+    echo -e "${YELLOW}Building API...${NC}"
+    cd /tmp/terminal-blog-api
+    go mod download
+    GOOS=linux GOARCH=amd64 go build -o "$API_BINARY" .
+    
     # Deploy binary
     mkdir -p "$API_DIR"
-    cp "/tmp/terminal_blog_api" "$API_DIR/$API_BINARY"
+    cp "/tmp/terminal-blog-api/$API_BINARY" "$API_DIR/"
     
     # Create systemd service
     cat > /etc/systemd/system/$API_SERVICE_NAME.service << EOF
@@ -202,24 +209,37 @@ EOF
     echo -e "${GREEN}API deployed${NC}\n"
 }
 
-deploy_web() {
-    echo -e "${GREEN}[5/6] Deploying Flutter Web...${NC}"
+build_and_deploy_web() {
+    echo -e "${GREEN}[5/7] Building and deploying Flutter Web...${NC}"
     
-    # Check if web files exist
-    if [ ! -d "/tmp/web" ]; then
-        echo -e "${RED}Flutter Web files not found in /tmp/web${NC}"
+    # Check if Flutter source exists
+    if [ ! -d "/tmp/terminal-blog" ]; then
+        echo -e "${RED}Flutter source not found in /tmp/terminal-blog${NC}"
+        echo "Please upload the Flutter source folder first"
         exit 1
     fi
     
-    rm -rf "$WEB_DIR"
-    mkdir -p "$WEB_DIR"
-    cp -r /tmp/web/. "$WEB_DIR/"
+    echo -e "${YELLOW}Note: Flutter Web build requires Flutter SDK${NC}"
     
-    echo -e "${GREEN}Flutter Web deployed${NC}\n"
+    if command -v flutter &> /dev/null; then
+        echo -e "${YELLOW}Building Flutter Web...${NC}"
+        cd /tmp/terminal-blog
+        flutter pub get
+        flutter build web --release
+        rm -rf "$WEB_DIR"
+        mkdir -p "$WEB_DIR"
+        cp -r /tmp/terminal-blog/build/web/. "$WEB_DIR/"
+        echo -e "${GREEN}Flutter Web built and deployed${NC}"
+    else
+        echo -e "${YELLOW}Flutter not found. Please install Flutter SDK first.${NC}"
+        mkdir -p "$WEB_DIR"
+    fi
+    
+    echo -e "${GREEN}Web deployed${NC}\n"
 }
 
 configure_nginx() {
-    echo -e "${GREEN}[6/6] Configuring Nginx...${NC}"
+    echo -e "${GREEN}[6/7] Configuring Nginx...${NC}"
     
     echo "Enter your domain (e.g., blog.example.com) or press Enter for IP:"
     read DOMAIN
@@ -263,23 +283,24 @@ EOF
     systemctl restart nginx
     
     echo -e "${GREEN}Nginx configured${NC}\n"
-    
-    echo -e "${GREEN}========================================${NC}"
-    echo -e "${GREEN}Deployment complete!${NC}"
-    echo -e "${GREEN}========================================${NC}"
-    echo ""
-    echo -e "API running on: http://localhost:$API_PORT"
-    echo -e "Web app at: http://$DOMAIN"
-    echo ""
-    echo -e "${YELLOW}To enable HTTPS, run:${NC}"
-    echo "  sudo certbot --nginx -d $DOMAIN"
-    echo "  sudo systemctl restart nginx"
 }
+
+echo -e "${GREEN}[7/7] Setup complete!${NC}"
+echo -e "${GREEN}========================================${NC}"
+echo -e "${GREEN}Deployment complete!${NC}"
+echo -e "${GREEN}========================================${NC}"
+echo ""
+echo -e "API running on: http://localhost:$API_PORT"
+echo -e "Web app at: http://$DOMAIN"
+echo ""
+echo -e "${YELLOW}To enable HTTPS, run:${NC}"
+echo "  sudo certbot --nginx -d $DOMAIN"
+echo "  sudo systemctl restart nginx"
 
 # Main
 install_dependencies
 setup_database
 setup_admin
-deploy_api
-deploy_web
+build_and_deploy_api
+build_and_deploy_web
 configure_nginx
